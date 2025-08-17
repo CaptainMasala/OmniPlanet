@@ -19,10 +19,17 @@ import {
   Zap,
   MapPin,
 } from 'lucide-react';
-import { PLANET_TO_NETWORK, type NetworkKey } from '@/config/networks';
+import {
+  PLANET_TO_NETWORK,
+  NETWORKS,
+  type NetworkKey,
+} from '@/config/networks';
 import { useStarship } from '@/hooks/useStarship';
 import { useCurrentNetworkKey } from '@/hooks/useCurrentNetwork';
 import { useStarHubContract } from '@/hooks/useStarHubContract';
+import { useStarshipContract } from '@/hooks/useStarshipContract';
+import { useAccount } from 'wagmi';
+import { Address } from 'viem';
 
 interface GalaxyProps {
   onBackToCockpit: () => void;
@@ -186,8 +193,10 @@ function Planet({
 
 export default function Galaxy({ onBackToCockpit }: GalaxyProps) {
   const currentNetwork = useCurrentNetworkKey('base-sepolia');
-  const { state, travel } = useStarship(currentNetwork);
+  const { state, travel, refresh } = useStarship(currentNetwork);
   const { state: starHubState } = useStarHubContract();
+  const { address } = useAccount();
+  const contract = useStarshipContract(currentNetwork);
   const planets: PlanetDescriptor[] = [
     {
       id: 1,
@@ -446,30 +455,93 @@ export default function Galaxy({ onBackToCockpit }: GalaxyProps) {
             </button>
           </div>
 
-          <motion.button
-            whileHover={canTravelFromSelectedPlanet ? { scale: 1.02 } : {}}
-            whileTap={canTravelFromSelectedPlanet ? { scale: 0.98 } : {}}
-            className={`mt-4 w-full py-2.5 px-4 rounded-lg font-semibold ${
-              canTravelFromSelectedPlanet
-                ? `bg-gradient-to-r ${selected.accent} text-white hover:opacity-90`
-                : 'bg-gray-600/50 text-gray-400 cursor-not-allowed'
-            }`}
-            onClick={async () => {
-              if (!state.tokenId || !canTravelFromSelectedPlanet) return;
-              const destination =
-                PLANET_TO_NETWORK[selected.name] ?? 'base-sepolia';
-              try {
-                await travel({ destination, tokenId: state.tokenId });
-              } catch (e) {
-                // ignore for now
-              }
-            }}
-            disabled={!canTravelFromSelectedPlanet}
-          >
-            {canTravelFromSelectedPlanet
-              ? 'Travel and Mine'
-              : 'Ship not at this planet'}
-          </motion.button>
+          {/* Action buttons */}
+          <div className='mt-4 space-y-3'>
+            {/* Mint Button - Show when user has no tokens */}
+            {!state.hasShip && (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className='w-full py-2.5 px-4 rounded-lg font-semibold bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:opacity-90'
+                onClick={async () => {
+                  if (!address) return;
+                  try {
+                    console.log('Minting token for address:', address);
+                    const tx = await contract.mint(address as Address, 1n);
+                    console.log('Mint transaction:', tx);
+                    // Refresh the state after minting
+                    await refresh();
+                  } catch (e: any) {
+                    console.error('Mint error:', e);
+                  }
+                }}
+              >
+                🚀 Mint Starship NFT
+              </motion.button>
+            )}
+
+            {/* Travel Button - Cross-chain travel with composer */}
+            <motion.button
+              whileHover={canTravelFromSelectedPlanet ? { scale: 1.02 } : {}}
+              whileTap={canTravelFromSelectedPlanet ? { scale: 0.98 } : {}}
+              className={`w-full py-2.5 px-4 rounded-lg font-semibold ${
+                canTravelFromSelectedPlanet
+                  ? `bg-gradient-to-r ${selected.accent} text-white hover:opacity-90`
+                  : 'bg-gray-600/50 text-gray-400 cursor-not-allowed'
+              }`}
+              onClick={async () => {
+                if (!state.tokenId || !canTravelFromSelectedPlanet) return;
+                const destination =
+                  PLANET_TO_NETWORK[selected.name] ?? 'base-sepolia';
+                const dst = NETWORKS[destination];
+                try {
+                  // Use player ID 1 for travel (you can make this configurable)
+                  await travel({
+                    destination,
+                    tokenId: state.tokenId,
+                    playerId: 1,
+                  });
+                } catch (e: any) {
+                  console.error('Travel error:', e);
+                }
+              }}
+              disabled={!canTravelFromSelectedPlanet}
+            >
+              {canTravelFromSelectedPlanet
+                ? 'Travel to Battle'
+                : 'Ship not at this planet'}
+            </motion.button>
+
+            {/* Battle Button - Same chain battle */}
+            <motion.button
+              whileHover={isShipAtSelectedPlanet ? { scale: 1.02 } : {}}
+              whileTap={isShipAtSelectedPlanet ? { scale: 0.98 } : {}}
+              className={`w-full py-2.5 px-4 rounded-lg font-semibold ${
+                isShipAtSelectedPlanet
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white hover:opacity-90'
+                  : 'bg-gray-600/50 text-gray-400 cursor-not-allowed'
+              }`}
+              onClick={async () => {
+                if (!state.tokenId || !isShipAtSelectedPlanet) return;
+                const currentNetworkConfig = NETWORKS[currentNetwork];
+                try {
+                  // Use player ID 2 for battle (you can make this configurable)
+                  await travel({
+                    destination: currentNetwork,
+                    tokenId: state.tokenId,
+                    playerId: 2,
+                  });
+                } catch (e: any) {
+                  console.error('Battle error:', e);
+                }
+              }}
+              disabled={!isShipAtSelectedPlanet}
+            >
+              {isShipAtSelectedPlanet
+                ? 'Battle Here'
+                : 'Ship must be at this planet'}
+            </motion.button>
+          </div>
         </motion.div>
       )}
 

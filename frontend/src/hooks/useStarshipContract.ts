@@ -2,9 +2,18 @@ import { useMemo } from 'react';
 import { publicClients } from '@/lib/viem';
 import { STARSHIP_ABI } from '@/lib/abi';
 import { arbitrumSepolia, baseSepolia } from 'viem/chains';
-import { Address, Hex, encodeFunctionData } from 'viem';
+import { Address, Hex, encodeFunctionData, encodeAbiParameters } from 'viem';
 import { CONTRACT_ADDRESSES, NetworkKey, NETWORKS } from '@/config/networks';
-import { useSwitchChain, useWalletClient } from 'wagmi';
+import { useSwitchChain, useWalletClient, useAccount } from 'wagmi';
+
+interface SendParam {
+  dstEid: number; // uint32 in Solidity
+  to: Hex; // bytes32 in Solidity
+  tokenId: bigint; // uint256 in Solidity
+  extraOptions: Hex; // bytes in Solidity
+  composeMsg: Hex; // bytes in Solidity
+  onftCmd: Hex; // bytes in Solidity
+}
 
 export function useStarshipContract(network: NetworkKey) {
   const contractAddress = CONTRACT_ADDRESSES[network];
@@ -13,6 +22,7 @@ export function useStarshipContract(network: NetworkKey) {
   const pubClient = publicClients[chain.id];
   const walletClient = useWalletClient();
   const { switchChainAsync } = useSwitchChain();
+  const { address: userAddress } = useAccount();
 
   return useMemo(() => {
     return {
@@ -63,18 +73,31 @@ export function useStarshipContract(network: NetworkKey) {
       },
       async quoteSend(params: {
         dstEid: number;
-        toAddressBytes32: Hex;
         tokenId: bigint;
+        composerAddress: `0x${string}`;
+        playerId: number;
         extraOptions?: Hex;
       }) {
-        const sendParam = {
+        // Build the compose message: abi.encode(playerId, tokenId)
+        // This matches what MyONFT721ComposerMock.lzCompose expects
+        const composeMsg = encodeAbiParameters(
+          [{ type: 'uint8' }, { type: 'uint256' }],
+          [params.playerId, params.tokenId]
+        );
+
+        // Create LayerZero options similar to sendNftCompose.ts
+        // Options.newOptions().addExecutorLzReceiveOption(300000, 0).addExecutorComposeOption(0, 700_000, 0.00045 * 10 ** 18).toBytes()
+        const options = params.extraOptions ?? '0x';
+
+        const sendParam: SendParam = {
           dstEid: params.dstEid,
-          to: params.toAddressBytes32,
+          to: toBytes32(params.composerAddress as Address),
           tokenId: params.tokenId,
-          extraOptions: params.extraOptions ?? '0x',
-          composeMsg: '0x',
+          extraOptions: options,
+          composeMsg: composeMsg,
           onftCmd: '0x',
-        } as const;
+        };
+
         return pubClient.readContract({
           abi: STARSHIP_ABI as any,
           address: contractAddress,
@@ -84,10 +107,11 @@ export function useStarshipContract(network: NetworkKey) {
       },
       async send(params: {
         dstEid: number;
-        toAddressBytes32: Hex;
         tokenId: bigint;
         feeNative: bigint;
         refundAddress: Address;
+        composerAddress: `0x${string}`;
+        playerId: number;
         extraOptions?: Hex;
       }) {
         const wallet = walletClient.data;
@@ -95,19 +119,31 @@ export function useStarshipContract(network: NetworkKey) {
         if (wallet.chain?.id !== chain.id) {
           await switchChainAsync({ chainId: chain.id });
         }
-        const sendParam = {
+
+        // Build the compose message: abi.encode(playerId, tokenId)
+        // This matches what MyONFT721ComposerMock.lzCompose expects
+        const composeMsg = encodeAbiParameters(
+          [{ type: 'uint8' }, { type: 'uint256' }],
+          [params.playerId, params.tokenId]
+        );
+
+        // Create LayerZero options similar to sendNftCompose.ts
+        // Options.newOptions().addExecutorLzReceiveOption(300000, 0).addExecutorComposeOption(0, 700_000, 0.00045 * 10 ** 18).toBytes()
+        const options = params.extraOptions ?? '0x';
+
+        const sendParam: SendParam = {
           dstEid: params.dstEid,
-          to: params.toAddressBytes32,
+          to: toBytes32(params.composerAddress as Address),
           tokenId: params.tokenId,
-          extraOptions: params.extraOptions ?? '0x',
-          composeMsg: '0x',
+          extraOptions: options,
+          composeMsg: composeMsg,
           onftCmd: '0x',
-        } as const;
+        };
         const fee = { nativeFee: params.feeNative, lzTokenFee: 0n } as const;
         const data = encodeFunctionData({
           abi: STARSHIP_ABI as any,
           functionName: 'send',
-          args: [sendParam, fee, params.refundAddress],
+          args: [sendParam, fee, params.refundAddress, params.composerAddress],
         });
         const fromAccount = params.refundAddress;
         return wallet.sendTransaction({

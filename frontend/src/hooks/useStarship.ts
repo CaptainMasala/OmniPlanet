@@ -206,25 +206,27 @@ export function useStarship(network: NetworkKey) {
   const travel = async (params: {
     destination: NetworkKey;
     tokenId: bigint;
+    playerId: number;
   }) => {
     if (!address) throw new Error('No wallet');
     const dst = NETWORKS[params.destination];
     if (!dst.lzEid) throw new Error('Missing LayerZero EID for destination');
-    const to = toBytes32(address as Address);
 
     try {
       const msgFee = await contract.quoteSend({
         dstEid: dst.lzEid,
-        toAddressBytes32: to,
         tokenId: params.tokenId,
+        composerAddress: dst.composerAddress,
+        playerId: params.playerId,
       });
 
       const tx = await contract.send({
         dstEid: dst.lzEid,
-        toAddressBytes32: to,
         tokenId: params.tokenId,
         feeNative: msgFee.nativeFee,
         refundAddress: address as Address,
+        composerAddress: dst.composerAddress,
+        playerId: params.playerId,
       });
       return tx;
     } catch (error) {

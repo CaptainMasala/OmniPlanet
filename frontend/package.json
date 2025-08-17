@@ -12,6 +12,7 @@
     "lint:fix": "next lint --fix"
   },
   "dependencies": {
+    "@layerzerolabs/lz-v2-utilities": "^3.0.125",
     "@radix-ui/react-dialog": "^1.1.15",
     "@rainbow-me/rainbowkit": "^2.2.8",
     "@react-three/drei": "^10.6.1",
